@@ -1,0 +1,214 @@
+---
+title: "gis"
+format: html
+editor: visual
+---
+
+```{r}
+
+# Load required libraries
+library(tidycensus)
+library(sf)
+library(ggplot2)
+library(dplyr)
+
+# Set up the Census API key
+census_api_key("41d067309a9134ca496c16adfd33605fb13d1cb4", overwrite = TRUE)
+
+# Function to load and process district data
+load_district_data <- function(variable, year = 2020) {
+  # Retrieve data for Illinois congressional districts
+  district_data <- get_acs(
+    geography = "congressional district",
+    variables = variable,
+    state = "IL",
+    year = year,
+    geometry = TRUE
+  )
+  
+  # Check structure to confirm column names
+  print(head(district_data))
+  
+  # Filter for District 4 using GEOID if NAME column is not present
+  district_4 <- district_data %>%
+    filter(GEOID == "1704") %>%
+    st_transform(crs = 4269)  # Transform to NAD 83
+  
+  return(district_4)
+}
+
+# Function to plot a specific feature of District 4
+plot_district_feature <- function(gdf, feature) {
+  ggplot(data = gdf) +
+    geom_sf(aes_string(fill = feature)) +
+    scale_fill_viridis_c() +
+    ggtitle(paste("Illinois District 4 -", feature)) +
+    theme_minimal()
+}
+
+# Example usage
+variable <- "B01003_001E"  # Total population variable for ACS
+district_data <- load_district_data(variable)
+
+# Plot the selected feature
+plot_district_feature(district_data, "estimate")
+
+```
+
+```{r}
+# Function to load and process district data for a specific ethnicity variable
+load_district_ethnicity_data <- function(variable, year = 2020) {
+  # Retrieve data for Illinois congressional districts
+  district_data <- get_acs(
+    geography = "congressional district",
+    variables = variable,
+    state = "IL",
+    year = year,
+    geometry = TRUE
+  )
+  
+  # Filter for District 4 using GEOID if NAME column is not present
+  district_4 <- district_data %>%
+    filter(GEOID == "1704") %>%
+    st_transform(crs = 4269)  # Transform to NAD 83
+  
+  return(district_4)
+}
+
+# Function to plot ethnicity for District 4
+plot_district_ethnicity <- function(gdf, feature) {
+  ggplot(data = gdf) +
+    geom_sf(aes_string(fill = feature)) +
+    scale_fill_viridis_c() +
+    ggtitle(paste("Illinois District 4 -", feature, "(Hispanic or Latino Population)")) +
+    theme_minimal()
+}
+
+# Example usage
+variable <- "B03002_012E"  # Hispanic or Latino population variable
+district_ethnicity_data <- load_district_ethnicity_data(variable)
+
+# Plot the Hispanic or Latino population in Illinois District 4
+plot_district_ethnicity(district_ethnicity_data, "estimate")
+
+```
+
+```{r}
+# Download tract-level data for Illinois District 4 (2021 ACS data)
+il_cd4_tracts <- get_acs(
+  geography = "tract",
+  variables = c(
+    population = "B01003_001",         # Total population
+    median_income = "B19013_001",       # Median household income
+    hispanic = "B03003_003"             # Hispanic or Latino population
+  ),
+  state = "IL",
+  year = 2021,
+  geometry = TRUE
+)
+```
+
+```{r}
+# Load required libraries
+library(tidycensus)
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(viridis)
+
+# Set up the Census API key
+census_api_key("41d067309a9134ca496c16adfd33605fb13d1cb4", overwrite = TRUE)
+
+get_il_data <- function(variables, year = 2021) {
+  il_data <- get_acs(
+    geography = "county",
+    variables = variables,
+    state = "IL",
+    year = year,
+    geometry = TRUE
+  )
+  return(il_data)
+}
+```
+
+```{r}
+# Function to create density map
+create_density_map <- function(data, value_col, title) {
+  ggplot(data) +
+    geom_sf(aes(fill = !!sym(value_col)), color = "white", size = 0.2) +
+    scale_fill_viridis(option = "plasma") +
+    theme_minimal() +
+    labs(title = title, fill = "Density") +
+    theme(legend.position = "bottom")
+}
+
+```
+
+```{r}
+# 1. Population Density
+pop_vars <- c(
+  population = "B01003_001",
+  area = "B01003_001"
+)
+
+pop_data <- get_il_data(pop_vars)
+
+pop_density <- pop_data %>%
+  group_by(GEOID) %>%
+  summarize(
+    population = sum(estimate[variable == "population"]),
+    area_sq_km = sum(estimate[variable == "area"]) * 2.58999, # Convert sq miles to sq km
+    pop_density = population / area_sq_km
+  )
+
+pop_density_map <- create_density_map(pop_density, "pop_density", "Population Density in Illinois (people per sq km)")
+print(pop_density_map)
+
+```
+
+```{r}
+# 2. Education Density (Bachelor's degree or higher)
+edu_vars <- c(
+  total_pop_25_plus = "B15003_001",
+  bachelors_or_higher = "B15003_022"
+)
+
+edu_data <- get_il_data(edu_vars)
+
+edu_density <- edu_data %>%
+  group_by(GEOID) %>%
+  summarize(
+    total_pop_25_plus = sum(estimate[variable == "total_pop_25_plus"]),
+    bachelors_or_higher = sum(estimate[variable == "bachelors_or_higher"]),
+    edu_density = bachelors_or_higher / total_pop_25_plus * 100
+  )
+
+edu_density_map <- create_density_map(edu_density, "edu_density", "Education Density in Illinois (% with Bachelor's or higher)")
+print(edu_density_map)
+
+```
+
+```{r}
+# 3. Ethnicity Density (Non-Hispanic White population)
+eth_vars <- c(
+  total_pop = "B03002_001",
+  nh_white = "B03002_003"
+)
+
+eth_data <- get_il_data(eth_vars)
+
+eth_density <- eth_data %>%
+  group_by(GEOID) %>%
+  summarize(
+    total_pop = sum(estimate[variable == "total_pop"]),
+    nh_white = sum(estimate[variable == "nh_white"]),
+    eth_density = nh_white / total_pop * 100
+  )
+
+eth_density_map <- create_density_map(eth_density, "eth_density", "Non-Hispanic White Population Density in Illinois (%)")
+print(eth_density_map)
+```
+
+```{r}
+
+```
