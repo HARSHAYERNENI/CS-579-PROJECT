@@ -1,0 +1,281 @@
+---
+title: "MappingIL4"
+format: html
+editor: visual
+---
+
+## Illinoi dsistrict 4
+
+To start with, load the packages we need.
+
+```{r chunk01, results='hide'}
+library(sf)
+library(dplyr)
+library(ggplot2)
+```
+
+Define the common directory where we'll save local copies of the things we might want to use in other notebooks.
+
+```{r chunk02}
+my_data_dir <- rappdirs::user_data_dir(appauthor = "HarshaYerneni", appname = "Mappingil4")
+if (!dir.exists(my_data_dir)) dir.create(my_data_dir, recursive = TRUE)
+tools::file_path_as_absolute(my_data_dir)
+
+```
+
+Load the shapefile with the Illinois Congressional district boundaries that we downloaded from redistrictingdatahub.org
+
+```{r chunk03, cache = TRUE}
+il_congdst_sf <- sf::st_read("il_cong_adopted_2021/HB 1291 FA #1.shp")
+
+nrow(il_congdst_sf)
+head(il_congdst_sf)
+```
+
+Given that we know that Illinois currently has 17 districts, this appears to be consistent.
+
+Let's plot the district boundaries using the geometries we just loaded from the shapefile
+
+```{r chunk04, cache = TRUE}
+ggplot(il_congdst_sf) + 
+  geom_sf() + 
+  labs(title = "Illinois Congressional Districts, 2021")
+
+```
+
+Let's pull the IL-4 district geometries
+
+```{r chunk05, cache = TRUE}
+il4 <- dplyr::filter(il_congdst_sf, DISTRICT == 04)
+
+```
+
+Let's plot IL-4
+
+```{r chunk06, cache = TRUE}
+ggplot(il4) + 
+  geom_sf() + 
+  labs(title = "Illinois Congressional District 4")
+
+```
+
+We are interested in the precinct boundaries.
+
+```{r chunk07, cache = TRUE}
+il_prec_2022_sf <- sf::st_read("il_2022_gen_prec/il_2022_gen_cong_prec/il_2022_gen_cong_prec.shp")
+
+nrow(il_prec_2022_sf)
+head(il_prec_2022_sf)
+
+```
+
+Let's look at all the column names in this table to see what's in the table
+
+```{r chunk08, cache = TRUE}
+
+names(il_prec_2022_sf)
+
+```
+
+County County Name Precinct Precinct Name CONG_DIST Congressional District
+
+```{r chunk09, cache = TRUE}
+il4_prec <- dplyr::filter(il_prec_2022_sf, CONG_DIST == 04)
+head(il4_prec)
+```
+
+```{r chunk10, cache = TRUE}
+il4_prec_sel <- il4_prec %>% select(UNIQUE_ID,
+                                      COUNTYFP,
+                                      County,
+                                      Precinct,
+                                      CONG_DIST,
+                                      GCON04DGAR, 
+                                      GCON04OWRI, 
+                                      GCON04RFAL, 
+                          
+                                      geometry)
+head(il4_prec_sel)
+
+```
+
+```{r chunk11, cache = TRUE}
+ggplot(il4_prec_sel) + 
+  geom_sf() + 
+  geom_sf(data = il4, fill = NA, lwd = 1.2) +
+  labs(title = "Precincts in Illinois Congressional District 4")
+
+```
+
+This map does appear to have some precincts that extend outside of the IL-4 Congressional district boundary. This needs further investigation.
+
+```{r chunk12, cache = TRUE}
+il4_prec_win <- il4_prec_sel %>% mutate(
+  Winner = case_when (
+    GCON04DGAR > GCON04RFAL ~ "D",
+    GCON04DGAR < GCON04RFAL ~ "R",
+    TRUE ~ "T") )
+
+head(il4_prec_win)
+
+```
+
+We have a few ties. One with no votes that might need investigation and another with each side getting 125 votes.
+
+Lets maps the winners
+
+```{r chunk13, cache = TRUE}
+ggplot(il4_prec_win, aes(color = Winner)) + 
+  geom_sf() + 
+  scale_color_manual(values = c("D" = "blue",
+                                "R" = "red",
+                                "T" = "green"))
+  
+
+
+```
+
+```{r chunk14, cache = TRUE}
+ggplot(il4_prec_win, aes(fill = Winner)) + 
+  geom_sf() 
+
+```
+
+```{r chunk15, cache = TRUE}
+ggplot(il4_prec_win, aes(fill = Winner)) + 
+  geom_sf() + 
+  scale_fill_manual(values = c("D" = "blue",
+                                "R" = "red",
+                                "T" = "green"))
+
+
+```
+
+```{r chunk16, cache = TRUE}
+ggplot(il4_prec_win, aes(fill = Winner, color = "white")) + 
+  geom_sf() + 
+  scale_fill_manual(values = c("D" = "blue",
+                                "R" = "red",
+                                "T" = "green"))
+  
+
+```
+
+```{r chunk16, cache = TRUE}
+ggplot(il4_prec_win, aes(fill = Winner)) + 
+  geom_sf() + 
+  scale_fill_manual(values = c("D" = "blue",
+                                "R" = "red",
+                                "T" = "green"))+
+  geom_sf(data = il4, fill = NA, lwd = 0.8) +
+  labs(title = "2022 IL Cong District 4 Election Results by Precinct")
+```
+
+```{r chunk17 cache=TRUE}
+totalDvotes <- sum(il4_prec_win$GCON04DGAR)
+totalRvotes <- sum(il4_prec_win$GCON04RFAL)
+totalOvotes <- sum(il4_prec_win$GCON04OWRI)
+cat(totalDvotes, "votes for the Democrat\n")
+cat(totalRvotes, "votes for the Republican\n")
+cat(totalOvotes, "votes for others\n")
+
+```
+
+```{r chunk 18}
+library(readr)
+```
+
+```{r chunk19}
+# Load ing libraries
+library(tidycensus)
+library(sf)
+library(ggplot2)
+library(dplyr)
+#census_api_key("41d067309a9134ca496c16adfd33605fb13d1cb4", install = TRUE)
+# Function to load and process district data
+load_district_data <- function(variable, year = 2020) {
+  # Retrieve data for Illinois congressional districts
+  district_data <- get_acs(
+    geography = "congressional district",
+    variables = variable,
+    state = "IL",
+    year = year,
+    geometry = TRUE
+  )
+  # Check structure to confirm column names
+  print(head(district_data))
+  # Filter for District 4 using GEOID if NAME column is not present
+  district_4 <- district_data %>%
+    filter(GEOID == "1704") %>%
+    st_transform(crs = 4269)  # Transform to NAD 83
+  return(district_4)
+}
+# Function to plot a specific feature of District 4
+plot_district_feature <- function(gdf, feature) {
+  ggplot(data = gdf) +
+    geom_sf(aes_string(fill = feature)) +
+    scale_fill_viridis_c() +
+    ggtitle(paste("Illinois District 4 -", feature)) +
+    theme_minimal()
+}
+variable <- "B01003_001E"  # Total population variable for ACS
+district_data <- load_district_data(variable)
+# Plot the selected feature
+plot_district_feature(district_data, "estimate")
+
+```
+
+```{r chunk20}
+# Function to load and process district data for a specific ethnicity variable
+load_district_ethnicity_data <- function(variable, year = 2020) {
+  # Retrieve data for Illinois congressional districts
+  district_data <- get_acs(
+    geography = "congressional district",
+    variables = variable,
+    state = "IL",
+    year = year,
+    geometry = TRUE
+  )
+  # Filter for District 4 using GEOID if NAME column is not present
+  district_4 <- district_data %>%
+    filter(GEOID == "1704") %>%
+    st_transform(crs = 4269)  # Transform to NAD 83
+  return(district_4)
+}
+# Function to plot ethnicity for District 4
+plot_district_ethnicity <- function(gdf, feature) {
+  ggplot(data = gdf) +
+    geom_sf(aes_string(fill = feature)) +
+    scale_fill_viridis_c() +
+    ggtitle(paste("Illinois District 4 -", feature, "(Hispanic or Latino Population)")) +
+    theme_minimal()
+}
+
+# Example usage
+variable <- "B03002_012E"  # Hispanic or Latino population variable
+district_ethnicity_data <- load_district_ethnicity_data(variable)
+# Plot the Hispanic or Latino population in Illinois District 4
+plot_district_ethnicity(district_ethnicity_data, "estimate")
+
+```
+
+```{}
+```
+
+```{}
+```
+
+```{}
+```
+
+```{}
+```
+
+```{}
+```
+
+```{}
+```
+
+```{}
+```
